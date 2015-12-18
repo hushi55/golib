@@ -133,8 +133,8 @@ func processCancelledTasks(cancelledTimeouts Queue) {
 			break
 		}
 
-		if timeout, ok := task.(hashedWheelTimeout); ok {
-			go timeout.task()
+		if timeout, ok := task.(cancelledtask); ok {
+			go timeout.run()
 		}
 	}
 }
