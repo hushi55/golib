@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
+	"math"
 	"unsafe"
 )
 
@@ -14,8 +15,8 @@ type cancelledtask struct {
 
 // wheel timer status
 const (
-	_MaxInt64 int64 = 0x7fffffffffffffff
-	_MinInt64 int64 = -_MaxInt64 - 1
+//	_MaxInt64 int64 = 0x7fffffffffffffff
+//	_MinInt64 int64 = -_MaxInt64 - 1
 
 	WORKER_STATE_INIT = iota
 	WORKER_STATE_STARTED
@@ -112,8 +113,8 @@ func waitForNextTick(tickDuration, startTime, tick int64) int64 {
 		sleepTimeMs := (deadline - currentTime + 999999) / 1000000
 
 		if sleepTimeMs <= 0 {
-			if currentTime == _MinInt64 {
-				return -_MaxInt64
+			if currentTime == math.MinInt64 {
+				return -(math.MaxInt64)
 			} else {
 				return currentTime
 			}
