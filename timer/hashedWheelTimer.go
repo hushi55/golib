@@ -2,10 +2,15 @@ package timer
 
 import (
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"time"
 	"unsafe"
 )
+
+type cancelledtask struct {
+	run func()
+}
 
 // wheel timer status
 const (
@@ -24,15 +29,16 @@ type HashedWheelTimer struct {
 	wheel        []hashedWheelBucket
 	mask         int
 
-	timeouts          Queue
-	cancelledTimeouts Queue
+	timeouts            Queue
+	cancelledTimeouts   Queue
+	unprocessedTimeouts Queue
 }
 
 func (this *HashedWheelTimer) start() (err error) {
 	switch atomic.LoadInt32(&this.workerState) {
 	case WORKER_STATE_INIT:
 		if atomic.CompareAndSwapInt32(&this.workerState, WORKER_STATE_INIT, WORKER_STATE_STARTED) {
-			                   go this.daemon(0);
+			go this.daemon(0)
 		}
 		break
 	case WORKER_STATE_STARTED:
@@ -50,7 +56,7 @@ func (this *HashedWheelTimer) start() (err error) {
 	return
 }
 
-// hashed wheel timer daemon go 
+// hashed wheel timer daemon go
 func (this *HashedWheelTimer) daemon(tick int64) func() {
 	return func() {
 		// Initialize the startTime.
@@ -67,28 +73,33 @@ func (this *HashedWheelTimer) daemon(tick int64) func() {
 			deadline := waitForNextTick(this.tickDuration, this.startTime, tick)
 			if deadline > 0 {
 				idx := (tick & int64(this.mask))
-				//processCancelledTasks();
+				processCancelledTasks(this.cancelledTimeouts)
 				bucket := this.wheel[idx]
-				//transferTimeoutsToBuckets();
+				transferTimeoutsToBuckets(this.timeouts, this.tickDuration, tick, this)
 				bucket.expireTimeouts(deadline)
 				tick++
 			}
 		}
 
 		// Fill the unprocessedTimeouts so we can return them from stop() method.
-		//            for (HashedWheelBucket bucket: wheel) {
-		//                bucket.clearTimeouts(unprocessedTimeouts);
-		//            }
+		for _, bucket := range this.wheel {
+			bucket.clearTimeouts(this.unprocessedTimeouts)
+		}
+
 		for {
-			timeout := this.timeouts.poll()
-			if timeout == nil {
+			e := this.timeouts.poll()
+			if e == nil {
 				break
 			}
-//			if !timeout.isCancelled() {
-//				unprocessedTimeouts.add(timeout)
-//			}
+
+			if timeout, ok := e.(hashedWheelTimeout); ok {
+				if !timeout.isCancelled() {
+					this.unprocessedTimeouts.add(timeout)
+				}
+			}
+
 		}
-//		processCancelledTasks()
+		processCancelledTasks(this.cancelledTimeouts)
 	}
 }
 
@@ -110,6 +121,62 @@ func waitForNextTick(tickDuration, startTime, tick int64) int64 {
 
 		time.Sleep(time.Millisecond * time.Duration(sleepTimeMs))
 
+	}
+}
+
+// sigle comsure
+func processCancelledTasks(cancelledTimeouts Queue) {
+	for {
+		task := cancelledTimeouts.poll()
+		if task == nil {
+			// all processed
+			break
+		}
+
+		if timeout, ok := task.(hashedWheelTimeout); ok {
+			go timeout.task()
+		}
+	}
+}
+
+func transferTimeoutsToBuckets(timeouts Queue, tickDuration, tick int64, timer *HashedWheelTimer) {
+
+	var (
+		calculated int64
+		ticks      int64
+	)
+
+	// transfer only max. 100000 timeouts per tick to prevent a thread to stale the workerThread when it just
+	// adds new timeouts in a loop.
+	for i := 0; i < 100000; i++ {
+		e := timeouts.poll()
+
+		if e == nil {
+			// all processed
+			break
+		}
+
+		if timeout, ok := e.(hashedWheelTimeout); ok {
+
+			if timeout.state == ST_CANCELLED {
+				// Was cancelled in the meantime.
+				continue
+			}
+
+			calculated = timeout.deadline / tickDuration
+			timeout.remainingRounds = (calculated - tick) / int64(len(timer.wheel))
+
+			if calculated > tick {
+				ticks = calculated
+			} else {
+				ticks = tick
+			} // Ensure we don't schedule for past.
+
+			stopIndex := (int(ticks) & timer.mask)
+			//
+			bucket := timer.wheel[stopIndex]
+			bucket.addTimeout(&timeout)
+		}
 	}
 }
 
@@ -143,9 +210,8 @@ func (this *hashedWheelBucket) expireTimeouts(deadline int64) (err error) {
 			if timeout.deadline <= deadline {
 				timeout.expire()
 			} else {
-				//                        // The timeout was placed into a wrong slot. This should never happen.
-				//                        err = errors.New(strings.format(
-				//                                "timeout.deadline (%d) > deadline (%d)", timeout.deadline, deadline));
+				// The timeout was placed into a wrong slot. This should never happen.
+				err = errors.New(fmt.Sprintf("timeout.deadline (%d) > deadline (%d)", timeout.deadline, deadline))
 			}
 			remove = true
 		} else if timeout.isCancelled() {
@@ -212,6 +278,19 @@ func (this *hashedWheelBucket) pollTimeout() *hashedWheelTimeout {
 	return head
 }
 
+func (this *hashedWheelBucket) clearTimeouts(set Queue) {
+	for {
+		timeout := this.pollTimeout()
+		if timeout == nil {
+			return
+		}
+		if timeout.isExpired() || timeout.isCancelled() {
+			continue
+		}
+		set.add(timeout)
+	}
+}
+
 const (
 	ST_INIT = iota
 	ST_CANCELLED
@@ -229,6 +308,7 @@ type hashedWheelTimeout struct {
 	next unsafe.Pointer
 	prev unsafe.Pointer
 
+	// 闭包
 	task func()
 }
 
@@ -258,7 +338,7 @@ func (this *hashedWheelTimeout) expire() {
 	//go this.task()
 }
 
-func (this *hashedWheelTimeout) cancel() bool {
+func (this *hashedWheelTimeout) cancel(timer *HashedWheelTimer) bool {
 	// only update the state it will be removed from HashedWheelBucket on next tick.
 	if !this.compareAndSetState(ST_INIT, ST_CANCELLED) {
 		return false
@@ -270,14 +350,15 @@ func (this *hashedWheelTimeout) cancel() bool {
 	//
 	// It is important that we not just add the HashedWheelTimeout itself again as it extends
 	// MpscLinkedQueueNode and so may still be used as tombstone.
-	//	            timer.cancelledTimeouts.add(new Runnable() {
-	//	                @Override
-	//	                public void run() {
-	//	                    HashedWheelBucket bucket = HashedWheelTimeout.this.bucket;
-	//	                    if (bucket != null) {
-	//	                        bucket.remove(HashedWheelTimeout.this);
-	//	                    }
-	//	                }
-	//	            });
+
+	caneltask := func(bucket *hashedWheelBucket, timeout *hashedWheelTimeout) func() {
+		return func() {
+			if bucket != nil {
+				bucket.remove(timeout)
+			}
+		}
+	}(this.bucket, this)
+
+	timer.cancelledTimeouts.add(cancelledtask{run: caneltask})
 	return true
 }

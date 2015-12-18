@@ -8,10 +8,11 @@ import (
 
 type Queue interface {
 	
-	poll() (e *struct{});
-	peek() (e *struct{});
+	poll() (e interface{});
+	peek() (e interface{});
 	
-	offer(e *struct{}) (ok bool, err error);
+	offer(e interface{}) (ok bool, err error);
+	add(e interface{}) (ok bool, err error);
 	
 }
 
@@ -39,10 +40,10 @@ type mpscLinkedQueueNode struct {
 
 	p30, p31, p32, p33, p34, p35, p36, p37 int64
 
-	value *struct{}
+	value interface{}
 }
 
-func (this *mpscLinkedQueueNode) getValue() (v *struct{}) {
+func (this *mpscLinkedQueueNode) getValue() (v interface{}) {
 	return this.value
 }
 
@@ -98,7 +99,7 @@ func (this *mpscLinkedQueue) peekNode() *mpscLinkedQueueNode {
 	return next
 }
 
-func (this *mpscLinkedQueue) offer(e *struct{}) (ok bool, err error){
+func (this *mpscLinkedQueue) offer(e interface{}) (ok bool, err error){
 	
 	if e == nil {
 		err = errors.New("offer's value is nil");
@@ -115,7 +116,11 @@ func (this *mpscLinkedQueue) offer(e *struct{}) (ok bool, err error){
 	return
 }
 
-func (this *mpscLinkedQueue) peek() (e *struct{}) {
+func (this *mpscLinkedQueue) add(e interface{}) (ok bool, err error){
+	return this.offer(e);
+}
+
+func (this *mpscLinkedQueue) peek() (e interface{}) {
 	next := this.peekNode()
 	if next == nil {
 		return nil
@@ -123,7 +128,7 @@ func (this *mpscLinkedQueue) peek() (e *struct{}) {
 	return next.getValue()
 }
 
-func (this *mpscLinkedQueue) poll() (e *struct{}) {
+func (this *mpscLinkedQueue) poll() (e interface{}) {
 	next := this.peekNode()
 	if next == nil {
 		return nil
