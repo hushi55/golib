@@ -135,7 +135,9 @@ func processCancelledTasks(cancelledTimeouts Queue) {
 		}
 
 		if timeout, ok := task.(cancelledtask); ok {
-			go timeout.run()
+			/// ???
+//			go timeout.run()
+			timeout.run()
 		}
 	}
 }
