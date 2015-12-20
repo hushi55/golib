@@ -4,6 +4,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 	"errors"
+	"fmt"
 )
 
 type Queue interface {
@@ -20,6 +21,7 @@ func NewQueue() Queue {
 	return new(mpscLinkedQueue)
 }
 
+//A lock-free concurrent single-consumer multi-producer Queue.
 type mpscLinkedQueue struct {
 	p00, p01, p02, p03, p04, p05, p06, p07 int64
 
@@ -32,15 +34,25 @@ type mpscLinkedQueue struct {
 	p20, p21, p22, p23, p24, p25, p26, p27 int64
 }
 
+func (q *mpscLinkedQueue)PreventCompileroptimization()  {
+	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", q.p00, q.p01, q.p02, q.p03, q.p04, q.p05, q.p06, q.p07);
+	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", q.p10, q.p11, q.p12, q.p13, q.p14, q.p15, q.p16, q.p17);
+	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", q.p20, q.p21, q.p22, q.p23, q.p24, q.p25, q.p26, q.p27);
+}
+
 type mpscLinkedQueueNode struct {
 	p00, p01, p02, p03, p04, p05, p06, p07 int64
 
-	next unsafe.Pointer
-//	next *mpscLinkedQueueNode
+	next *mpscLinkedQueueNode
 
 	p30, p31, p32, p33, p34, p35, p36, p37 int64
 
 	value interface{}
+}
+
+func (qn *mpscLinkedQueueNode) PreventCompileroptimization()  {
+	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", qn.p00, qn.p01, qn.p02, qn.p03, qn.p04, qn.p05, qn.p06, qn.p07);
+	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", qn.p30, qn.p31, qn.p32, qn.p33, qn.p34, qn.p35, qn.p36, qn.p37);
 }
 
 func (this *mpscLinkedQueueNode) getValue() (v interface{}) {
@@ -48,11 +60,11 @@ func (this *mpscLinkedQueueNode) getValue() (v interface{}) {
 }
 
 func (this *mpscLinkedQueueNode) getNext() *mpscLinkedQueueNode {
-	return (*mpscLinkedQueueNode)(this.next)
+	return this.next
 }
 
 func (this *mpscLinkedQueueNode) setNext(newNext *mpscLinkedQueueNode) {
-	atomic.StorePointer(&this.next, unsafe.Pointer(newNext))
+	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&this.next)), unsafe.Pointer(newNext))
 }
 
 func (this *mpscLinkedQueueNode) unlink() {
@@ -61,10 +73,8 @@ func (this *mpscLinkedQueueNode) unlink() {
 
 func (this *mpscLinkedQueue) getAndSetTailRef(newValue *mpscLinkedQueueNode) *mpscLinkedQueueNode {
 	for {
-
-		//		p : = unsafe.Pointer(this.tailRef)
-		current := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(this.tailRef)))
-		if atomic.CompareAndSwapPointer((*unsafe.Pointer)(unsafe.Pointer(this.tailRef)),
+		current := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&this.tailRef)))
+		if atomic.CompareAndSwapPointer((*unsafe.Pointer)(unsafe.Pointer(&this.tailRef)),
 			current,
 			(unsafe.Pointer(newValue))) {
 			return (*mpscLinkedQueueNode)(current)
@@ -72,17 +82,8 @@ func (this *mpscLinkedQueue) getAndSetTailRef(newValue *mpscLinkedQueueNode) *mp
 	}
 }
 
-//func (this *mpscLinkedQueue) getAndSetHeadRef(newValue unsafe.Pointer) unsafe.Pointer {
-//	for {
-//		current := atomic.LoadPointer(&this.headRef)
-//		if atomic.CompareAndSwapPointer(&this.headRef, current, newValue) {
-//			return current
-//		}
-//	}
-//}
-
-func (this *mpscLinkedQueue) SetHeadRef(newValue *mpscLinkedQueueNode) {
-	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(this.headRef)), unsafe.Pointer(newValue))
+func (this *mpscLinkedQueue) setHeadRef(newValue *mpscLinkedQueueNode) {
+	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&this.headRef)), unsafe.Pointer(newValue))
 }
 
 func (this *mpscLinkedQueue) peekNode() *mpscLinkedQueueNode {
@@ -136,10 +137,8 @@ func (this *mpscLinkedQueue) poll() (e interface{}) {
 
 	// next becomes a new head.
 	oldHead := this.headRef
-	// Similar to 'headRef.node = next', but slightly faster (storestore vs loadstore)
-	// See: http://robsjava.blogspot.com/2013/06/a-faster-volatile.html
-	// See: http://psy-lob-saw.blogspot.com/2012/12/atomiclazyset-is-performance-win-for.html
-	this.SetHeadRef(next)
+	
+	this.setHeadRef(next)
 
 	// Break the linkage between the old head and the new head.
 	oldHead.unlink()

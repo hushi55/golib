@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 	"time"
 	"math"
-	"unsafe"
 )
 
 type cancelledtask struct {
@@ -15,8 +14,6 @@ type cancelledtask struct {
 
 // wheel timer status
 const (
-//	_MaxInt64 int64 = 0x7fffffffffffffff
-//	_MinInt64 int64 = -_MaxInt64 - 1
 
 	WORKER_STATE_INIT = iota
 	WORKER_STATE_STARTED
@@ -33,6 +30,20 @@ type HashedWheelTimer struct {
 	timeouts            Queue
 	cancelledTimeouts   Queue
 	unprocessedTimeouts Queue
+}
+
+func NewTimer() *HashedWheelTimer {
+	timer := new(HashedWheelTimer);
+	
+	timeouts            := NewQueue();
+	cancelledTimeouts   := NewQueue();
+	unprocessedTimeouts := NewQueue();
+	
+	timer.timeouts 				= timeouts;
+	timer.cancelledTimeouts 	= cancelledTimeouts;
+	timer.unprocessedTimeouts 	= unprocessedTimeouts;
+	
+	return timer;
 }
 
 func (this *HashedWheelTimer) start() (err error) {
@@ -136,8 +147,8 @@ func processCancelledTasks(cancelledTimeouts Queue) {
 
 		if timeout, ok := task.(cancelledtask); ok {
 			/// ???
-//			go timeout.run()
-			timeout.run()
+			go timeout.run()
+//			timeout.run()
 		}
 	}
 }
@@ -197,7 +208,7 @@ func (this *hashedWheelBucket) addTimeout(timeout *hashedWheelTimeout) (err erro
 		this.tail = timeout
 		this.head = timeout
 	} else {
-		this.tail.next = unsafe.Pointer(timeout)
+		this.tail.next = timeout
 		this.tail = timeout
 	}
 	return
@@ -308,8 +319,8 @@ type hashedWheelTimeout struct {
 
 	bucket *hashedWheelBucket
 
-	next unsafe.Pointer
-	prev unsafe.Pointer
+	next *hashedWheelTimeout
+	prev *hashedWheelTimeout
 
 	// 闭包
 	task func()
@@ -353,15 +364,18 @@ func (this *hashedWheelTimeout) cancel(timer *HashedWheelTimer) bool {
 	//
 	// It is important that we not just add the HashedWheelTimeout itself again as it extends
 	// MpscLinkedQueueNode and so may still be used as tombstone.
-
-	caneltask := func(bucket *hashedWheelBucket, timeout *hashedWheelTimeout) func() {
-		return func() {
-			if bucket != nil {
-				bucket.remove(timeout)
+	if this.bucket != nil {
+		
+		caneltask := func(bucket *hashedWheelBucket, timeout *hashedWheelTimeout) func() {
+			return func() {
+				if bucket != nil {
+					bucket.remove(timeout)
+				}
 			}
-		}
-	}(this.bucket, this)
-
-	timer.cancelledTimeouts.add(cancelledtask{run: caneltask})
+		}(this.bucket, this)
+	
+		timer.cancelledTimeouts.add(cancelledtask{run: caneltask})
+		
+	}
 	return true
 }
