@@ -68,7 +68,7 @@ func (this *HashedWheelTimer) start() (err error) {
 	return
 }
 
-// hashed wheel timer daemon go
+// hashed wheel timer daemon go (single-consumer)
 func (this *HashedWheelTimer) daemon(tick int64) func() {
 	return func() {
 		// Initialize the startTime.
@@ -238,7 +238,7 @@ func (this *hashedWheelBucket) expireTimeouts(deadline int64) (err error) {
 		if remove {
 			this.remove(timeout)
 		}
-		timeout = (*hashedWheelTimeout)(next)
+		timeout = next
 	}
 	return
 }
@@ -247,10 +247,10 @@ func (this *hashedWheelBucket) remove(timeout *hashedWheelTimeout) {
 	next := timeout.next
 	// remove timeout that was either processed or cancelled by updating the linked-list
 	if timeout.prev != nil {
-		((*hashedWheelTimeout)(timeout.prev)).next = next
+		timeout.prev.next = next
 	}
 	if timeout.next != nil {
-		((*hashedWheelTimeout)(timeout.next)).prev = timeout.prev
+		timeout.next.prev = timeout.prev
 	}
 
 	if timeout == this.head {
@@ -259,11 +259,11 @@ func (this *hashedWheelBucket) remove(timeout *hashedWheelTimeout) {
 			this.tail = nil
 			this.head = nil
 		} else {
-			this.head = (*hashedWheelTimeout)(next)
+			this.head = next
 		}
 	} else if timeout == this.tail {
 		// if the timeout is the tail modify the tail to be the prev node.
-		this.tail = (*hashedWheelTimeout)(timeout.prev)
+		this.tail = timeout.prev
 	}
 	// null out prev, next and bucket to allow for GC.
 	timeout.prev = nil
@@ -281,8 +281,8 @@ func (this *hashedWheelBucket) pollTimeout() *hashedWheelTimeout {
 		this.tail = nil
 		this.head = nil
 	} else {
-		this.head = (*hashedWheelTimeout)(next)
-		((*hashedWheelTimeout)(next)).prev = nil
+		this.head = next
+		next.prev = nil
 	}
 
 	// nil out prev and next to allow for GC.
@@ -348,8 +348,8 @@ func (this *hashedWheelTimeout) expire() {
 	if !this.compareAndSetState(ST_INIT, ST_EXPIRED) {
 		return
 	}
-	this.task()
-	//go this.task()
+	//this.task()
+	go this.task()
 }
 
 func (this *hashedWheelTimeout) cancel(timer *HashedWheelTimer) bool {
