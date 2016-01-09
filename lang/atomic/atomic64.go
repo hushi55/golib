@@ -5,6 +5,10 @@ package atomic
 
 import "sync/atomic"
 
+func NewInt64(v int64) Int64 {
+	return Int64{v}
+}
+
 type Int64 struct {
 	v int64
 }
