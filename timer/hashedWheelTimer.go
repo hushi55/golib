@@ -3,9 +3,9 @@ package timer
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sync/atomic"
 	"time"
-	"math"
 )
 
 type cancelledtask struct {
@@ -14,7 +14,6 @@ type cancelledtask struct {
 
 // wheel timer status
 const (
-
 	WORKER_STATE_INIT = iota
 	WORKER_STATE_STARTED
 	WORKER_STATE_SHUTDOWN
@@ -33,17 +32,17 @@ type HashedWheelTimer struct {
 }
 
 func NewTimer() *HashedWheelTimer {
-	timer := new(HashedWheelTimer);
-	
-	timeouts            := NewQueue();
-	cancelledTimeouts   := NewQueue();
-	unprocessedTimeouts := NewQueue();
-	
-	timer.timeouts 				= timeouts;
-	timer.cancelledTimeouts 	= cancelledTimeouts;
-	timer.unprocessedTimeouts 	= unprocessedTimeouts;
-	
-	return timer;
+	timer := new(HashedWheelTimer)
+
+	timeouts := NewQueue()
+	cancelledTimeouts := NewQueue()
+	unprocessedTimeouts := NewQueue()
+
+	timer.timeouts = timeouts
+	timer.cancelledTimeouts = cancelledTimeouts
+	timer.unprocessedTimeouts = unprocessedTimeouts
+
+	return timer
 }
 
 func (this *HashedWheelTimer) start() (err error) {
@@ -148,7 +147,7 @@ func processCancelledTasks(cancelledTimeouts Queue) {
 		if timeout, ok := task.(cancelledtask); ok {
 			/// ???
 			go timeout.run()
-//			timeout.run()
+			//			timeout.run()
 		}
 	}
 }
@@ -365,7 +364,7 @@ func (this *hashedWheelTimeout) cancel(timer *HashedWheelTimer) bool {
 	// It is important that we not just add the HashedWheelTimeout itself again as it extends
 	// MpscLinkedQueueNode and so may still be used as tombstone.
 	if this.bucket != nil {
-		
+
 		caneltask := func(bucket *hashedWheelBucket, timeout *hashedWheelTimeout) func() {
 			return func() {
 				if bucket != nil {
@@ -373,9 +372,9 @@ func (this *hashedWheelTimeout) cancel(timer *HashedWheelTimer) bool {
 				}
 			}
 		}(this.bucket, this)
-	
+
 		timer.cancelledTimeouts.add(cancelledtask{run: caneltask})
-		
+
 	}
 	return true
 }

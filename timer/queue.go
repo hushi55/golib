@@ -1,20 +1,18 @@
 package timer
 
 import (
-	"sync/atomic"
-	"unsafe"
 	"errors"
 	"fmt"
+	"sync/atomic"
+	"unsafe"
 )
 
 type Queue interface {
-	
-	poll() (e interface{});
-	peek() (e interface{});
-	
-	offer(e interface{}) (ok bool, err error);
-	add(e interface{}) (ok bool, err error);
-	
+	poll() (e interface{})
+	peek() (e interface{})
+
+	offer(e interface{}) (ok bool, err error)
+	add(e interface{}) (ok bool, err error)
 }
 
 func NewQueue() Queue {
@@ -34,10 +32,10 @@ type mpscLinkedQueue struct {
 	p20, p21, p22, p23, p24, p25, p26, p27 int64
 }
 
-func (q *mpscLinkedQueue)PreventCompileroptimization()  {
-	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", q.p00, q.p01, q.p02, q.p03, q.p04, q.p05, q.p06, q.p07);
-	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", q.p10, q.p11, q.p12, q.p13, q.p14, q.p15, q.p16, q.p17);
-	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", q.p20, q.p21, q.p22, q.p23, q.p24, q.p25, q.p26, q.p27);
+func (q *mpscLinkedQueue) PreventCompileroptimization() {
+	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", q.p00, q.p01, q.p02, q.p03, q.p04, q.p05, q.p06, q.p07)
+	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", q.p10, q.p11, q.p12, q.p13, q.p14, q.p15, q.p16, q.p17)
+	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", q.p20, q.p21, q.p22, q.p23, q.p24, q.p25, q.p26, q.p27)
 }
 
 type mpscLinkedQueueNode struct {
@@ -50,9 +48,9 @@ type mpscLinkedQueueNode struct {
 	value interface{}
 }
 
-func (qn *mpscLinkedQueueNode) PreventCompileroptimization()  {
-	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", qn.p00, qn.p01, qn.p02, qn.p03, qn.p04, qn.p05, qn.p06, qn.p07);
-	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", qn.p30, qn.p31, qn.p32, qn.p33, qn.p34, qn.p35, qn.p36, qn.p37);
+func (qn *mpscLinkedQueueNode) PreventCompileroptimization() {
+	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", qn.p00, qn.p01, qn.p02, qn.p03, qn.p04, qn.p05, qn.p06, qn.p07)
+	fmt.Printf("padding is  %d, %d, %d, %d, %d, %d, %d,", qn.p30, qn.p31, qn.p32, qn.p33, qn.p34, qn.p35, qn.p36, qn.p37)
 }
 
 func (this *mpscLinkedQueueNode) getValue() (v interface{}) {
@@ -100,14 +98,14 @@ func (this *mpscLinkedQueue) peekNode() *mpscLinkedQueueNode {
 	return next
 }
 
-func (this *mpscLinkedQueue) offer(e interface{}) (ok bool, err error){
-	
+func (this *mpscLinkedQueue) offer(e interface{}) (ok bool, err error) {
+
 	if e == nil {
-		err = errors.New("offer's value is nil");
+		err = errors.New("offer's value is nil")
 	}
-	
+
 	ok = true
-	
+
 	newTail := new(mpscLinkedQueueNode)
 	newTail.value = e
 	newTail.next = nil
@@ -117,8 +115,8 @@ func (this *mpscLinkedQueue) offer(e interface{}) (ok bool, err error){
 	return
 }
 
-func (this *mpscLinkedQueue) add(e interface{}) (ok bool, err error){
-	return this.offer(e);
+func (this *mpscLinkedQueue) add(e interface{}) (ok bool, err error) {
+	return this.offer(e)
 }
 
 func (this *mpscLinkedQueue) peek() (e interface{}) {
@@ -137,7 +135,7 @@ func (this *mpscLinkedQueue) poll() (e interface{}) {
 
 	// next becomes a new head.
 	oldHead := this.headRef
-	
+
 	this.setHeadRef(next)
 
 	// Break the linkage between the old head and the new head.
